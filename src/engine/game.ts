@@ -50,6 +50,8 @@ export interface Effect {
   motor?: LR;
   crushSide?: LR;
   metAt?: number; // run clock when the trigger condition first held
+  retryAt?: number; // target resolution failed; try again at this time
+  lastMiss?: string; // why the last resolution failed
   progress: number; // 0..1 animation helper for renderer
   // outcome tracing
   trace: TraceSample[];
@@ -489,9 +491,10 @@ export class Game {
       if (e.phase === "armed") {
         if (!live) continue;
         if (this.clock - e.armedAt > e.order.expiresMs) {
-          this.fizzle(e, "expired");
+          this.fizzle(e, e.lastMiss ?? "expired");
           continue;
         }
+        if (e.retryAt !== undefined && this.clock < e.retryAt) continue;
         if (this.clock < this.protectedUntil) continue;
         if (this.busy(e)) continue;
         if (this.progress > 0.95) continue;
@@ -575,7 +578,12 @@ export class Game {
 
   private startTelegraph(e: Effect) {
     const reason = this.resolveTargets(e);
-    if (reason) return this.fizzle(e, reason);
+    if (reason) {
+      // no fair target right now: stay armed and look again as the ball climbs (fizzle on expiry)
+      e.retryAt = this.clock + 250;
+      e.lastMiss = reason;
+      return;
+    }
     e.phase = "telegraph";
     e.t = 0;
     e.startedAt = this.clock;

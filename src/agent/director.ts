@@ -379,7 +379,8 @@ export class Director {
     }
     if (idx > 0 && g.clock - this.lastDecisionAt > IDLE_MS && !this.inFlight) this.queue("idle");
     if (idx > 0 && idx < g.totalChambers - 2 && g.progress > 0.45 && !this.plans[idx + 1]) this.queue("plan_next");
-    if (idx === g.totalChambers - 2 && g.progress > 0.3 && !this.finalRequested) {
+    // late enough to include this chamber's behaviour, early enough to hide Opus latency
+    if (idx === g.totalChambers - 2 && g.progress > 0.55 && !this.finalRequested) {
       this.finalRequested = true;
       void this.requestFinal();
     }
@@ -699,10 +700,11 @@ export class Director {
     if (log) log.outcome = outcome;
     const ago = log ? ((this.game.clock - log.at) / 1000).toFixed(1) : "?";
     const mark = ev.verdict === "SUPPORTED" ? "CORRECT" : ev.verdict === "WEAKENED" ? "WRONG" : ev.verdict === "TRIVIAL" ? "OBVIOUS" : "VOID";
+    const voidWhy = w.fizzled ? " (NO FAIR SHOT)" : ev.verdict === "INCONCLUSIVE" ? ` (${ev.observed.toUpperCase()})` : "";
     this.lines.push({
       id: lineSeq++,
       kind: "verdict",
-      text: `SEALED ${ago}s AGO: ${describePrediction(w.prediction)} — ${mark}`,
+      text: `SEALED ${ago}s AGO: ${describePrediction(w.prediction)} — ${mark}${voidWhy}`,
       at: this.nowWall(),
     });
     if (ev.verdict === "SUPPORTED") this.setEye("smug", 2200);

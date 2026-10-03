@@ -378,7 +378,9 @@ export function localRunEnd(obs: Observation, extra?: Record<string, unknown>): 
       ? "You gave me nothing to test. Clever, or lucky."
       : right > wrong
         ? `${right} of ${right + wrong} calls correct. You are readable.`
-        : `${right} of ${right + wrong} calls correct. You changed. Annoying.`;
+        : obs.model.adaptation.v.changed
+          ? `${right} of ${right + wrong} calls correct. You changed. Annoying.`
+          : `${right} of ${right + wrong} calls correct. Lucky, or learning.`;
   if (kills === 0 && deaths === 0) notes.push("Single traps never landed. Stack them.");
   const priorWrong =
     obs.memory?.prior.wallParkSide && obs.model.wallPark.v.side && obs.memory.prior.wallParkSide !== obs.model.wallPark.v.side;
