@@ -6,6 +6,8 @@ RIGGED is a desktop browser physics arcade game built around the two-motor bar m
 
 ![RIGGED: the MODEL chamber, with RIG's terminal on the right](docs/screenshot-model.png)
 
+![Agent View: player model, RIG's current hypothesis, ledger and decision log](docs/screenshot-agent-view.png)
+
 ## Play
 
 ```bash
