@@ -37,6 +37,11 @@ function hashOf(n: number) {
   return `#${x.toString(16).toUpperCase().padStart(8, "0").slice(0, 4)}-${((x >>> 7) & 0xffff).toString(16).toUpperCase().padStart(4, "0")}`;
 }
 
+/**
+ * Taunts ("say") are typed out; system/sealed/verdict lines print instantly.
+ * Lines reveal strictly in order, so nothing below an unfinished taunt shows yet.
+ * If taunts pile up (fast play / ?speed), older ones snap to complete.
+ */
 function useTyped(lines: TermLine[]) {
   const [shown, setShown] = useState<Record<number, number>>({});
   const linesRef = useRef(lines);
@@ -47,16 +52,21 @@ function useTyped(lines: TermLine[]) {
         const ls = linesRef.current;
         const next = { ...prev };
         let changed = false;
-        // type the oldest unfinished line first
-        for (const l of ls) {
+        for (let i = 0; i < ls.length; i++) {
+          const l = ls[i];
           const have = next[l.id] ?? 0;
-          if (have < l.text.length) {
-            const step = Math.max(1, Math.round((TYPE_CPS * 40) / 1000));
-            next[l.id] = Math.min(l.text.length, have + step);
-            if (l.kind === "say") sfx.rigType();
+          if (have >= l.text.length) continue;
+          const backlog = ls.slice(i + 1).filter((q) => q.kind === "say").length;
+          if (l.kind !== "say" || backlog >= 2) {
+            next[l.id] = l.text.length;
             changed = true;
-            break;
+            continue; // instant lines don't hold the queue
           }
+          const step = Math.max(1, Math.round((TYPE_CPS * 40) / 1000));
+          next[l.id] = Math.min(l.text.length, have + step);
+          sfx.rigType();
+          changed = true;
+          break;
         }
         return changed ? next : prev;
       });
@@ -64,6 +74,38 @@ function useTyped(lines: TermLine[]) {
     return () => clearInterval(id);
   }, []);
   return shown;
+}
+
+const VERDICT_RE = /^(.*?)\s+—\s+(CORRECT|WRONG|OBVIOUS|VOID)$/;
+
+function TermLineView({ l, n }: { l: TermLine; n: number }) {
+  if (l.kind === "sealed") {
+    return (
+      <div className="ln sealed">
+        <span className="env">SEALED</span>
+        <span className="lbl">PREDICTION</span>
+        <span className="hash">{hashOf(l.id)}</span>
+      </div>
+    );
+  }
+  if (l.kind === "verdict") {
+    const m = VERDICT_RE.exec(l.text);
+    const mark = m?.[2] ?? "";
+    const body = m?.[1] ?? l.text;
+    const ci = body.indexOf(": ");
+    const head = ci > 0 ? body.slice(0, ci + 1) : "";
+    const claim = ci > 0 ? body.slice(ci + 2) : body;
+    return (
+      <div className={`ln verdict v-${mark.toLowerCase()}`}>
+        <span className="body">
+          {head ? <span className="when">{head}</span> : null}
+          <span className="what">{claim}</span>
+        </span>
+        {mark ? <span className="stamp">{mark}</span> : null}
+      </div>
+    );
+  }
+  return <div className={`ln ${l.kind}`}>{l.text.slice(0, n)}</div>;
 }
 
 function Meter({ l, r }: { l: number; r: number }) {
@@ -74,6 +116,8 @@ function Meter({ l, r }: { l: number; r: number }) {
     </div>
   );
 }
+
+const secs = (v: number) => (v >= 10 ? `${Math.round(v)}s` : `${v.toFixed(1)}s`);
 
 export function RigPanel({ rt }: { rt: Runtime }) {
   const d = rt.director;
@@ -91,24 +135,33 @@ export function RigPanel({ rt }: { rt: Runtime }) {
   const tally = rt.model?.tally();
   const active = d?.ledger.filter((l) => l.status === "active").at(-1);
   const mode = rt.session?.rigMode ?? "local";
+  const offline = rt.screen === "win" && rt.winStage === 0;
   const status =
     rt.screen === "title"
       ? "DORMANT"
       : rt.screen === "win"
         ? rt.winStage === 0
           ? "OFFLINE"
-          : "..."
+          : "REBOOTING"
         : d?.inFlight
           ? "THINKING"
           : d && d.currentWatch
             ? "PREDICTING"
             : "OBSERVING";
 
-  const winLines: TermLine[] =
-    rt.screen === "win" && rt.winStage >= 1 ? [{ id: -1, kind: "say", text: "...no.", at: 0 }] : [];
+  // reveal strictly in order: stop at the first line still being typed
+  const visible: { l: TermLine; n: number }[] = [];
+  for (const l of lines) {
+    const n = shown[l.id] ?? 0;
+    if (n === 0) break;
+    visible.push({ l, n });
+    if (n < l.text.length) break;
+  }
+  const lastSayId = visible.filter((v) => v.l.kind === "say").at(-1)?.l.id;
+  const typing = visible.length > 0 && visible[visible.length - 1].n < visible[visible.length - 1].l.text.length;
 
   return (
-    <aside className="rig" aria-label="RIG terminal">
+    <aside className={`rig ${offline ? "offline" : ""}`} aria-label="RIG terminal">
       <div className="eyebox">
         <EyeCanvas rt={rt} />
         <div className="id">
@@ -117,61 +170,72 @@ export function RigPanel({ rt }: { rt: Runtime }) {
         </div>
       </div>
       <div className="status">
-        <span className={status === "THINKING" ? "think" : ""}>:: {status}</span>
-        <span>{d ? `CH ${d.game.chamber.index + 1}/${d.game.totalChambers}` : ""}</span>
+        <span className={status === "THINKING" ? "think" : ""}>
+          <i className={`dot ${status.toLowerCase()}`} />
+          {status}
+        </span>
+        <span>{d && rt.screen === "game" ? `CH ${d.game.chamber.index + 1}/${d.game.totalChambers}` : ""}</span>
       </div>
-      <div className="term" role="log" aria-live="polite">
-        {rt.screen === "win" && rt.winStage === 0 ? null : (
-          <>
-            {(rt.screen === "win" ? winLines : lines).map((l) => {
-              const n = l.id < 0 ? l.text.length : (shown[l.id] ?? 0);
-              const wrong = l.kind === "verdict" && /WRONG/.test(l.text);
-              return (
-                <div key={l.id} className={`ln ${l.kind} ${wrong ? "wrong" : ""}`}>
-                  {l.kind === "sealed" ? (
-                    <>
-                      {l.text.slice(0, n)} <span className="hash">{n >= l.text.length ? hashOf(l.id) : ""}</span>
-                    </>
-                  ) : (
-                    l.text.slice(0, n)
-                  )}
-                </div>
-              );
-            })}
-            {rt.screen === "title" ? <div className="ln sys">AWAITING SUBJECT</div> : null}
-            <div className="ln">
+      {rt.screen === "win" ? (
+        <div className="term final">{rt.winStage >= 1 ? <div className="no">...no.</div> : <div className="dead">NO CARRIER</div>}</div>
+      ) : (
+        <div className="term" role="log" aria-live="polite">
+          {visible.map(({ l, n }) => (
+            <div key={l.id} className={l.kind === "say" && l.id !== lastSayId ? "old" : ""}>
+              <TermLineView l={l} n={n} />
+            </div>
+          ))}
+          {rt.screen === "title" ? <div className="ln sys">AWAITING SUBJECT_</div> : null}
+          {typing ? null : (
+            <div className="ln prompt">
               <span className="cursor" />
             </div>
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
       {tally && rt.screen === "game" ? (
         <div className="watch">
+          <div className="watch-h">
+            <span>WATCHING YOU</span>
+            <span>LEFT · RIGHT</span>
+          </div>
           <div className="row">
-            <span className="lbl">WALL L|R</span>
+            <span className="lbl">WALL TIME</span>
             <Meter l={Math.min(1, tally.wallL / 8)} r={Math.min(1, tally.wallR / 8)} />
             <span className="val">
-              {tally.wallL.toFixed(1)}|{tally.wallR.toFixed(1)}
+              {secs(tally.wallL)}
+              <em>|</em>
+              {secs(tally.wallR)}
             </span>
           </div>
           <div className="row">
-            <span className="lbl">LANE L|R</span>
+            <span className="lbl">LANE</span>
             <Meter l={tally.laneL} r={tally.laneR} />
             <span className="val">
-              {Math.round(tally.laneL * 100)}|{Math.round(tally.laneR * 100)}
+              {Math.round(tally.laneL * 100)}
+              <em>|</em>
+              {Math.round(tally.laneR * 100)}%
             </span>
           </div>
           <div className="row">
-            <span className="lbl">FLINCH</span>
-            <span style={{ color: "var(--rig)" }}>
-              {tally.panic.length ? tally.panic.slice(-8).map((p) => (p === "hold" ? "·" : p)).join(" ") : "—"}
+            <span className="lbl">ESCAPES</span>
+            <span className="flinch">
+              {tally.panic.length
+                ? tally.panic.slice(-8).map((p, i) => (
+                    <b key={i} className={i === Math.min(8, tally.panic.length) - 1 ? "now" : ""}>
+                      {p === "hold" ? "·" : p}
+                    </b>
+                  ))
+                : "—"}
             </span>
             <span className="val">{tally.reaction ? `${tally.reaction}ms` : ""}</span>
           </div>
           {active ? (
             <div className="hyp">
-              <span className="tag">BELIEF {Math.round(active.confidence * 100)}% </span>
-              {active.claim}
+              <span className="tag">
+                BELIEF <b>{Math.round(active.confidence * 100)}%</b>
+              </span>
+              <span className="claim">{active.claim}</span>
             </div>
           ) : null}
         </div>

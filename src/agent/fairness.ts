@@ -83,7 +83,11 @@ export function pressureFor(ctx: FairnessContext, st: FairnessState): Observatio
   const gapLeft = Math.max(0, globalGapMs(ctx) - (ctx.clock - st.lastStart));
   const budget = inRelief(ctx) ? 0 : Math.max(0, Math.min(1, 1 - gapLeft / globalGapMs(ctx))) * (intensityCap(ctx) / 3);
   let note: string | null = null;
-  if (ctx.chamber === 0) note = "calibration: watch; at most one gentle probe (intensity 1)";
+  if (ctx.chamber === 0)
+    note =
+      st.calibrationProbes >= 1
+        ? "calibration: probe used; watch"
+        : "calibration: one gentle probe allowed (intensity 1); use it to test your first read";
   else if (inRelief(ctx)) note = "relief: player struggling, director forces WAIT";
   else if (ctx.deathsHere >= 3) note = "player struggling: intensity capped at 1";
   else if (ctx.cleanChambers >= 2) note = "player dominating: full intensity allowed";

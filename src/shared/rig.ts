@@ -132,7 +132,8 @@ export interface Metric<T> {
 }
 
 export interface PlayerModelSnapshot {
-  laneBias: Metric<{ L: number; C: number; R: number }>;
+  /** run-weighted shares; `recent` covers roughly the last 20 s, `changed` flags a side switch */
+  laneBias: Metric<{ L: number; C: number; R: number; recent?: { L: number; C: number; R: number }; changed?: boolean }>;
   wallPark: Metric<{ L: number; R: number; side: Side | null }>; // seconds parked on each wall
   panicDirection: Metric<{ L: number; R: number; hold: number; side: Side | null }>;
   reactionMs: Metric<number | null>;

@@ -2,6 +2,7 @@
 // fallback) and by the client when the server is unreachable. It follows the
 // same loop the prompt asks of Claude: observe -> hypothesize -> act ->
 // predict -> update, and its output goes through the same validators.
+import { hashString, makeRng } from "../engine/rng";
 import type {
   Ability,
   FinalPlan,
@@ -26,7 +27,7 @@ const SALIENCE: Partial<Record<string, number>> = {
   laneBias: 1.2,
   panicDirection: 1.25,
   motorShare: 0.9,
-  exitApproach: 0.9,
+  exitApproach: 0.3, // confounded: the director places exits on the weak side
   reactionMs: 0.8,
   style: 0.7,
   correctionRate: 0.55,
@@ -70,11 +71,12 @@ function plansFor(r: FieldRead, obs: Observation, reads: FieldRead[]): Plan[] {
     }
     case "wallPark": {
       const s = r.side ?? "R";
-      const p = pred({ event: "stall", pRig: clamp(0.35 + share * 0.3, 0.3, 0.8), pBaseline: 0.3, windowMs: 2500 });
+      // a true wall-parker goes back to its wall once the pressure lifts
+      const p = pred({ event: "enter_lane", side: s, pRig: clamp(0.35 + share * 0.35, 0.35, 0.85), pBaseline: 0.34, windowMs: 5500 });
       const trig = obs.ball.lane === s ? NOW : enters(s);
       return [
         { ability: "CRUSH", side: s, trigger: trig, prediction: p },
-        { ability: "PULSE", side: s, trigger: trig, prediction: pred({ event: "flee", side: opposite(s), windowMs: 1800, pRig: 0.6, pBaseline: 0.5 }) },
+        { ability: "PULSE", side: opposite(s) === "C" ? "L" : opposite(s), trigger: trig, prediction: p },
       ];
     }
     case "panicDirection": {
@@ -359,19 +361,34 @@ export function localFinalPlan(obs: Observation): Validated<FinalPlan> {
 // -------------------------------------------------------------------- run end
 export function localRunEnd(obs: Observation, extra?: Record<string, unknown>): Validated<RunEnd> {
   const reads = readModel(obs.model)
-    .filter((r) => r.score >= THIN_EVIDENCE && r.field !== "adaptation")
+    .filter((r) => r.score >= THIN_EVIDENCE && r.field !== "adaptation" && r.field !== "exitApproach")
     .sort((a, b) => b.score - a.score);
   const notes = reads.slice(0, 3).map((r) => claimFor(r));
-  const escaped = extra?.result === "escaped";
-  const deaths = typeof extra?.deaths === "number" ? extra.deaths : null;
+  const n = (k: string) => (typeof extra?.[k] === "number" ? (extra[k] as number) : 0);
+  const right = n("predictionsRight");
+  const wrong = n("predictionsWrong");
+  const kills = n("abilityKills");
+  const deaths = n("deaths");
+  const escaped = extra?.result !== "abandoned";
+  const rng = makeRng(hashString(`${obs.epoch}|${right}|${wrong}|${deaths}`));
+  const pick = <T,>(xs: T[]) => xs[Math.floor(rng() * xs.length)];
+  // the verdict is built from the real scorecard, never a boast it didn't earn
+  const verdict =
+    right + wrong === 0
+      ? "You gave me nothing to test. Clever, or lucky."
+      : right > wrong
+        ? `${right} of ${right + wrong} calls correct. You are readable.`
+        : `${right} of ${right + wrong} calls correct. You changed. Annoying.`;
+  if (kills === 0 && deaths === 0) notes.push("Single traps never landed. Stack them.");
+  const priorWrong =
+    obs.memory?.prior.wallParkSide && obs.model.wallPark.v.side && obs.memory.prior.wallParkSide !== obs.model.wallPark.v.side;
+  if (priorWrong) notes.unshift(`Memory was wrong: wall moved to ${obs.model.wallPark.v.side === "L" ? "left" : "right"}.`);
   const raw: RunEnd = {
-    verdict: escaped
-      ? "You escaped. I learned more than you did."
-      : deaths != null
-        ? `${deaths} deaths. Every one was predictable.`
-        : "You left. The data stays.",
-    memoryNotes: notes.length ? notes : ["Too little data. Watch longer next time."],
-    taunt: escaped ? "Next time, I start ahead." : "I will remember this.",
+    verdict: escaped ? verdict : `${deaths} deaths. ${verdict}`,
+    memoryNotes: notes.length ? notes.slice(0, 3) : ["Too little data. Watch longer next time."],
+    taunt: escaped
+      ? pick(["Next time, I start ahead.", "Enjoy it. I kept the data.", "Again. I want more of you.", "That room was a draft."])
+      : pick(["I will remember this.", "Come back. I'm not done."]),
   };
   return validateRunEnd(raw, obs);
 }

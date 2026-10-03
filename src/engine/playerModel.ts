@@ -29,6 +29,7 @@ export interface DeathRecord {
 export class PlayerModel {
   seconds = 0; // playing seconds observed
   lane = tri(); // decayed seconds per lane
+  laneRecent = tri(); // fast-decay (~10 s half-life) lane seconds
   laneRun = tri(); // total seconds per lane (run)
   laneChamber = tri();
   wall = { L: 0, R: 0 }; // seconds parked against an outer wall
@@ -69,6 +70,11 @@ export class PlayerModel {
     this.lane.R *= decay;
     const lane = game.lane;
     this.lane[lane] += dt;
+    const fast = Math.pow(0.5, dt / 10);
+    this.laneRecent.L *= fast;
+    this.laneRecent.C *= fast;
+    this.laneRecent.R *= fast;
+    this.laneRecent[lane] += dt;
     this.laneRun[lane] += dt;
     this.laneChamber[lane] += dt;
     if (this.callout) this.callout.lane[lane] += dt;
@@ -218,6 +224,11 @@ export class PlayerModel {
     const laneTot = this.lane.L + this.lane.C + this.lane.R || 1;
     const laneV = { L: r2(this.lane.L / laneTot), C: r2(this.lane.C / laneTot), R: r2(this.lane.R / laneTot) };
     const laneDom = Math.max(laneV.L, laneV.R);
+    const rt = this.laneRecent.L + this.laneRecent.C + this.laneRecent.R || 1;
+    const recent = { L: r2(this.laneRecent.L / rt), C: r2(this.laneRecent.C / rt), R: r2(this.laneRecent.R / rt) };
+    const runSide = laneV.L > laneV.R ? "L" : "R";
+    const recentSide = recent.L > recent.R ? "L" : "R";
+    const changed = this.seconds > 25 && laneDom > 0.5 && recentSide !== runSide && recent[recentSide] > 0.55;
 
     const wallTot = this.wall.L + this.wall.R;
     const wallSide: Side | null =
@@ -260,7 +271,7 @@ export class PlayerModel {
     }
 
     return {
-      laneBias: { v: laneV, c: r2(clamp01(this.seconds / 18) * (laneDom > 0.5 ? 1 : 0.6)), n: Math.round(this.seconds) },
+      laneBias: { v: { ...laneV, recent, changed }, c: r2(clamp01(this.seconds / 18) * (laneDom > 0.5 ? 1 : 0.6)), n: Math.round(this.seconds) },
       wallPark: { v: { L: r1(this.wall.L), R: r1(this.wall.R), side: wallSide }, c: r2(clamp01(wallTot / 6)), n: Math.round(wallTot) },
       panicDirection: { v: { L: pl, R: pr, hold: ph, side: panicSide }, c: r2(clamp01(pn / 4)), n: pn },
       reactionMs: { v: reaction, c: r2(clamp01(this.reactions.length / 3)), n: this.reactions.length },

@@ -34,7 +34,7 @@ export function describePrediction(p: NonNullable<TacticalDecision["prediction"]
     case "flee":
       return p.side === "C" ? "YOU HOLD STILL" : `YOU FLEE ${side(p.side)}`;
     case "enter_lane":
-      return `YOU TAKE THE ${side(p.side)}`;
+      return `YOU END UP ${p.side === "C" ? "CENTRE" : side(p.side)}`;
     case "avoid_lane":
       return `YOU AVOID THE ${side(p.side)}`;
     case "react_within":
@@ -73,10 +73,12 @@ export function evaluate(w: PredictionWatch): Evaluation {
       break;
     }
     case "enter_lane": {
-      const entered = inWindow.some((s) => s.lane === p.side);
-      if (!entered && died) return { verdict: "INCONCLUSIVE", observed: "died before committing" };
-      verdict = entered ? "SUPPORTED" : "WEAKENED";
-      observed = entered ? `entered ${p.side} lane` : `stayed out of ${p.side} lane`;
+      // "ends up in lane S": where the ball is when the window closes
+      if (!last) return { verdict: "INCONCLUSIVE", observed: "no data" };
+      if (died && last.lane !== p.side) return { verdict: "INCONCLUSIVE", observed: "died before committing" };
+      const ended = last.lane === p.side;
+      verdict = ended ? "SUPPORTED" : "WEAKENED";
+      observed = ended ? `ended in ${p.side} lane` : `ended in ${last.lane} lane`;
       break;
     }
     case "avoid_lane": {

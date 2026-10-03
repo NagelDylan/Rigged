@@ -351,7 +351,9 @@ export class Runtime {
         break;
       case "checkpoint":
         sfx.checkpoint(e.chamber + 1);
-        this.view.banner = { text: `CHECKPOINT ${String(e.chamber + 1).padStart(2, "0")}`, color: "amber", at: now };
+        // the final exit leads straight into the win sequence; no banner over "RIG OFFLINE"
+        if (e.chamber + 1 < g.totalChambers)
+          this.view.banner = { text: `CHECKPOINT ${String(e.chamber + 1).padStart(2, "0")}`, color: "amber", at: now };
         if (e.chamber + 1 < g.totalChambers) setTimeout(() => sfx.transition(), TIMING.checkpointHoldMs);
         break;
       case "chamber_start": {
@@ -405,6 +407,7 @@ export class Runtime {
     const d = this.director!;
     this.screen = "win";
     this.view.screen = "offline";
+    this.view.banner = null;
     this.view.eye = "offline";
     this.winStage = 0;
     this.winAt = performance.now();

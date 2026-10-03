@@ -93,6 +93,8 @@ export interface BallState {
 
 let effectSeq = 1;
 const LEVERAGE_WAIT_MS = 3000;
+/** MAGNET pull by intensity (u/s²); must stay escapable at full counter-tilt (see fairness red-team test). */
+export const MAGNET_K = [110, 150, 185] as const;
 
 export class Game {
   chamber!: ChamberDef;
@@ -345,7 +347,7 @@ export class Game {
     for (const e of this.effects) {
       if (e.phase !== "active") continue;
       if (e.order.ability === "PULSE" && e.dir) {
-        const k = [330, 470, 610][e.order.intensity - 1];
+        const k = [330, 450, 520][e.order.intensity - 1];
         const env = Math.sin(Math.PI * clamp(e.t / e.activeMs, 0, 1));
         external += e.dir * k * (0.5 + env);
       }
@@ -356,7 +358,7 @@ export class Game {
           const d = Math.hypot(dx, h.y - ball.y);
           const reach = 230;
           if (d < reach) {
-            const k = [150, 200, 250][e.order.intensity - 1];
+            const k = MAGNET_K[e.order.intensity - 1];
             external += Math.sign(dx) * k * (1 - d / reach) * clamp(Math.abs(dx) / 12, 0, 1);
           }
         }
@@ -431,8 +433,12 @@ export class Game {
   }
 
   private die(h: Hole) {
+    // RIG only gets the kill if its effect was actually acting (not merely telegraphing)
     const cause = this.effects.find(
-      (e) => e.startedAt !== null && (e.phase !== "done" || this.clock - (e.startedAt + e.order.telegraphMs + e.activeMs) < 1500),
+      (e) =>
+        e.startedAt !== null &&
+        this.clock - e.startedAt >= e.order.telegraphMs &&
+        (e.phase !== "done" || this.clock - (e.startedAt + e.order.telegraphMs + e.activeMs) < 1500),
     );
     if (cause) cause.killed = true;
     this.ball.fallingInto = h;
@@ -491,6 +497,7 @@ export class Game {
         if (this.progress > 0.95) continue;
         if (!this.triggerMet(e)) continue;
         if (this.gate && !this.gate(e)) continue;
+        if (this.doomedSoon()) continue; // don't claim a ball that is already falling in
         this.startTelegraph(e);
         continue;
       }
@@ -527,6 +534,16 @@ export class Game {
     this.effects = this.effects.filter((e) => e.phase !== "done" || this.clock - (e.startedAt ?? 0) < 4000);
   }
 
+  /** Would the ball reach a hole on its own within ~700 ms at its current velocity? */
+  private doomedSoon() {
+    const { x, vx, y } = this.ball;
+    for (let t = 0.05; t <= 0.7; t += 0.05) {
+      const px = x + vx * t;
+      if (this.chamber.holes.some((h) => Math.hypot(h.x - px, h.y - y) < captureRadius(h) + 2)) return true;
+    }
+    return false;
+  }
+
   /** One hazard at a time (the director may allow two in MODEL). */
   maxConcurrent = 1;
   private busy(e: Effect) {
@@ -552,7 +569,7 @@ export class Game {
     return this.chamber.holes.some((h) => {
       const dy = h.y - ball.y;
       const dx = (h.x - ball.x) * dir;
-      return dy > -12 && dy < 120 && dx > 10 && dx < 190;
+      return dy > -12 && dy < 40 && dx >= 45 && dx < 190;
     });
   }
 
@@ -601,7 +618,8 @@ export class Game {
         return null;
       }
       case "SHIFT": {
-        const holes = this.chamber.holes.filter((h) => !h.follow && h.y > ball.y + 45 && h.y < ball.y + 380);
+        // targets stay within ~1 screen above the ball so the telegraph is visible
+        const holes = this.chamber.holes.filter((h) => !h.follow && h.y > ball.y + 45 && h.y < ball.y + 190);
         holes.sort((a, b) => a.y - b.y);
         for (const h of holes) {
           const o = outerIntervalAt(this.chamber.outer, h.y);

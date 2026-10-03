@@ -11,16 +11,16 @@ export const PHYS = {
   motorAccel: 1300, // u/s² ramp up (≈100 ms to full)
   motorDecel: 2400, // u/s² ramp down (≈55 ms to stop)
   maxDiff: 140, // max |yR - yL|
-  gravity: 1550, // a = gravity * slope
-  damping: 1.35, // linear velocity damping per second
-  maxVx: 300,
+  gravity: 1150, // a = gravity * slope
+  damping: 1.9, // linear velocity damping per second
+  maxVx: 230,
   deadzoneSlope: 0.006,
   deadzoneVx: 6,
   wallRestitution: 0.35,
-  captureMargin: 3, // ball falls when centre within holeR - margin
+  captureMargin: 4, // ball falls when centre within holeR - margin
   captureTicks: 2,
   lipBand: 7, // extra radius beyond capture where the hole lip pulls
-  lipPull: 80, // u/s² toward hole centre inside the lip band
+  lipPull: 45, // u/s² toward hole centre inside the lip band
   exitAssistR: 40,
   exitAssistPull: 110,
   barMinY: 26,
@@ -39,7 +39,7 @@ export const TIMING = {
 /** Minimum telegraph per ability (fairness floor, ms). */
 export const MIN_TELEGRAPH = {
   SHIFT: 950,
-  PULSE: 950,
+  PULSE: 1100,
   CRUSH: 1200,
   MAGNET: 1000,
   JAM: 1100,

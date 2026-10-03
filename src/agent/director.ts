@@ -206,7 +206,8 @@ export class Director {
     return {
       template,
       pressureSide: fav,
-      density: (Math.min(3, 1 + Math.floor(index / 2) + (this.cleanChambers >= 1 ? 1 : 0)) as 1 | 2 | 3),
+      // chamber 2 is always density 1: a clean calibration says little about skill
+      density: (index <= 1 ? 1 : Math.min(3, 1 + Math.floor(index / 2) + (this.cleanChambers >= 2 ? 1 : 0))) as 1 | 2 | 3,
       reason: "local plan",
       source: "local",
     };
@@ -250,6 +251,8 @@ export class Director {
     const busy =
       this.watch !== null || g.effects.some((e) => e.phase === "armed" || e.phase === "telegraph" || e.phase === "active");
     const urgent = this.pending !== null && PRIORITY[this.pending] >= 7;
+    // a routine decision arriving ~3 s from now would land after the checkpoint
+    if (this.pending && !urgent && g.progress > 0.82) this.pending = null;
     if (
       this.pending &&
       !this.inFlight &&
@@ -314,6 +317,7 @@ export class Director {
           this.watch.diedAtMs = g.clock - this.watch.anchorAt;
           this.closeWatch();
         } else if (this.watch && this.watch.anchorAt === null) {
+          this.voidSealed("ball lost first");
           this.watch = null;
         }
         if (cause) this.setEye("smug", 1800);
@@ -337,6 +341,7 @@ export class Director {
         this.pushEvent(`cleared chamber ${e.chamber + 1} (${deaths} deaths)`);
         this.track("checkpoint", { chamber: e.chamber, deaths, timeMs: Math.round(g.chamberClock) });
         if (this.watch && this.watch.anchorAt !== null) this.closeWatch();
+        else if (this.watch) this.voidSealed("chamber cleared first");
         this.watch = null;
         break;
       }
@@ -358,6 +363,7 @@ export class Director {
       }
       return;
     }
+    if (idx === 0 && g.clock - this.lastDecisionAt > IDLE_MS && !this.inFlight && this.lastDecisionAt > 0) this.queue("idle");
     for (const [field, c] of [
       ["laneBias", snap.laneBias.c],
       ["panicDirection", snap.panicDirection.c],
@@ -441,7 +447,8 @@ export class Director {
       model: snap,
       events: this.recentEvents.slice(-8).map((e) => `t-${((now - e.at) / 1000).toFixed(1)} ${e.text}`),
       lastOutcome: this.lastOutcome,
-      ledger: this.ledger.filter((l) => l.status === "active").slice(-5),
+      // abandoned beliefs are included so RIG doesn't re-adopt a claim it already dropped
+      ledger: this.ledger.slice(-6),
       memory: this.memory,
       variety: { abilityUses: { ...this.abilityUses }, recentTaunts: this.recentTaunts.slice(-5) },
       wantNextChamber:
@@ -737,12 +744,32 @@ export class Director {
     this.version++;
   }
 
-  async requestRunEnd(summary: unknown): Promise<RunEnd | null> {
+  /** RIG's scorecard for the run: what it predicted correctly and what it actually killed. */
+  tally() {
+    const v = this.log.filter((l) => l.outcome).map((l) => l.outcome!.verdict);
+    const kills = Object.values(this.model.abilities).reduce((s, a) => s + (a?.kills ?? 0), 0);
+    const used = Object.values(this.model.abilities).reduce((s, a) => s + (a?.used ?? 0), 0);
+    return {
+      predictionsRight: v.filter((x) => x === "SUPPORTED").length,
+      predictionsWrong: v.filter((x) => x === "WEAKENED").length,
+      abilityKills: kills,
+      abilitiesUsed: used,
+    };
+  }
+
+  async requestRunEnd(summary: Record<string, unknown>): Promise<RunEnd | null> {
     const obs = this.buildObservation("run_end");
+    const tally = this.tally();
     const res = await this.transport
-      .decide<RunEnd>({ runId: this.runId, kind: "run_end", observation: obs, extra: { summary } }, 14000)
+      .decide<RunEnd>({ runId: this.runId, kind: "run_end", observation: obs, extra: { ...summary, ...tally } }, 14000)
       .catch(() => null);
     if (!res) return null;
+    // honesty guard: RIG may gloat, but not about a scorecard it didn't earn
+    const boast = /\b(every|all|never wrong|perfect|flawless)\b/i.test(res.decision.verdict);
+    if (boast && (tally.predictionsWrong > 0 || tally.abilityKills === 0)) {
+      res.decision.verdict = `${tally.predictionsRight} of ${tally.predictionsRight + tally.predictionsWrong} predictions landed. Not enough.`;
+      res.repairs = [...res.repairs, "director: verdict contradicted the tally; replaced"];
+    }
     this.countSource(res);
     this.runEnd = { end: res.decision, source: res.source };
     this.version++;
@@ -769,6 +796,12 @@ export class Director {
 
   sys(text: string) {
     this.note(text, "sys");
+  }
+
+  /** A sealed prediction that can no longer be graded is shown as VOID, never silently dropped. */
+  private voidSealed(reason: string) {
+    this.lines.push({ id: lineSeq++, kind: "verdict", text: `PREDICTION VOID — ${reason.toUpperCase()}`, at: this.nowWall() });
+    this.version++;
   }
 
   setEye(mood: EyeMood, ms: number) {

@@ -1079,7 +1079,7 @@ export class Renderer {
     if (ey + ex.r * this.s > 0) return; // exit at least partly visible
     const b = this.b;
     const dist = Math.max(0, Math.round(ex.y - g.ball.y));
-    const label = `EXIT ${dist}`;
+    const label = `EXIT ${(dist / 100).toFixed(1)}M`; // 100 world units = 1 machine metre
     const tw = measure(label);
     const w = 11 + 3 + 7 + 3 + tw + 6;
     const h = 15;

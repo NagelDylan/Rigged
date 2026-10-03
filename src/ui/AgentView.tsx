@@ -2,6 +2,12 @@ import type { DecisionLog } from "../agent/director";
 import type { PlayerModelSnapshot } from "../shared/rig";
 import type { Runtime } from "./runtime";
 
+const FIELD_WORD: Record<string, string> = {
+  laneBias: "lane",
+  wallPark: "wall parking",
+  panicDirection: "escape direction",
+  motorShare: "motor habit",
+};
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const sideWord = (s: string | null | undefined) => (s === "L" ? "LEFT" : s === "R" ? "RIGHT" : s === "C" ? "CENTRE" : "—");
 
@@ -30,7 +36,7 @@ function ModelRows({ m }: { m: PlayerModelSnapshot }) {
     ],
     [
       "Panic dir",
-      panicN ? `${sideWord(m.panicDirection.v.side)} (${m.panicDirection.v.L}L/${m.panicDirection.v.R}R/${m.panicDirection.v.hold}·)` : "—",
+      panicN ? `${m.panicDirection.v.side === "C" ? "FREEZES" : m.panicDirection.v.side ? sideWord(m.panicDirection.v.side) : "MIXED"} ${Math.max(m.panicDirection.v.L, m.panicDirection.v.R, m.panicDirection.v.hold)}/${panicN}` : "—",
       panicN ? Math.max(m.panicDirection.v.L, m.panicDirection.v.R, m.panicDirection.v.hold) / panicN : 0,
       m.panicDirection.c,
       !!m.panicDirection.v.side,
@@ -49,8 +55,8 @@ function ModelRows({ m }: { m: PlayerModelSnapshot }) {
       {m.adaptation.v.calledOut ? (
         <>
           <span className="k">Adaptation</span>
-          <span className="v" style={{ gridColumn: "2 / span 3", textAlign: "left" }}>
-            called out {m.adaptation.v.calledOut}: {m.adaptation.v.before} → {m.adaptation.v.after}{" "}
+          <span className="v adapt">
+            called out on {FIELD_WORD[m.adaptation.v.calledOut] ?? m.adaptation.v.calledOut}: {m.adaptation.v.before} → {m.adaptation.v.after}{" "}
             {m.adaptation.v.changed ? <b style={{ color: "var(--amber)" }}>CHANGED</b> : "holding"}
           </span>
         </>
@@ -65,8 +71,8 @@ function FragmentRow({ k, v, bar, c, hot }: { k: string; v: string; bar: number;
       <span className="k">{k}</span>
       <Bar v={bar} hot={hot} />
       <span className="v">{v}</span>
-      <span className="c" title="confidence">
-        c{Math.round(c * 100)}
+      <span className="c" title="how sure the model is (sample size)">
+        {c < 0.34 ? "weak" : c < 0.67 ? "some" : "sure"}
       </span>
     </>
   );
@@ -84,37 +90,48 @@ function LogItem({ l }: { l: DecisionLog }) {
       <div className="meta">
         <b>{l.id}</b> · t{(l.at / 1000).toFixed(1)}s · trigger <b>{trig(l)}</b> ·{" "}
         <span className={l.source}>{l.source === "live" ? `LIVE ${(l.model ?? "").replace("claude-", "")}` : "LOCAL"}</span> ·{" "}
-        {l.latencyMs}ms{l.fallbackReason ? ` · fallback: ${l.fallbackReason}` : ""}
+        {l.latencyMs}ms{l.fallbackReason && !["local_mode", "no_key"].includes(l.fallbackReason) ? ` · live failed → local (${l.fallbackReason})` : ""}
       </div>
       {d ? (
         <>
           <div className="chain">
-            <span className="arrow">SAW </span>
-            {d.observation}
+            <span className="lbl">SAW</span>
+            <span>{d.observation}</span>
           </div>
           <div className="chain">
-            <span className="arrow">THINKS </span>
-            {d.hypothesis.claim} <span className="arrow">({d.hypothesis.status} · {d.hypothesis.field} · {pct(d.hypothesis.confidence)})</span>
+            <span className="lbl">THINKS</span>
+            <span>
+              {d.hypothesis.claim} <span className="arrow">({d.hypothesis.status} · {d.hypothesis.field} · {pct(d.hypothesis.confidence)})</span>
+            </span>
           </div>
           <div className="chain">
-            <span className="arrow">DOES </span>
-            {d.action.ability === "WAIT" ? "WAIT (watch)" : (l.order ?? `${d.action.ability} ${d.action.side}`)} <span className="arrow">· {d.intent}</span>
+            <span className="lbl">DOES</span>
+            <span>
+              {d.action.ability === "WAIT" ? "WAIT (watch)" : (l.order ?? `${d.action.ability} ${d.action.side}`)} <span className="arrow">· {d.intent}</span>
+            </span>
           </div>
           {l.sealed ? (
             <div className="chain">
-              <span className="arrow">PREDICTS </span>
-              {l.sealed.toLowerCase()} <span className="arrow">(p {pct(d.prediction?.pRig ?? 0)} vs naive {pct(d.prediction?.pBaseline ?? 0)})</span>
+              <span className="lbl">PREDICTS</span>
+              <span>
+                {l.sealed.toLowerCase()} <span className="arrow">(p {pct(d.prediction?.pRig ?? 0)} vs naive {pct(d.prediction?.pBaseline ?? 0)})</span>
+              </span>
             </div>
           ) : null}
           {l.outcome ? (
             <div className="chain">
-              <span className="arrow">RESULT </span>
-              <span className={`vtag ${l.outcome.verdict}`}>{l.outcome.verdict}</span> {l.outcome.observed}
+              <span className="lbl">RESULT</span>
+              <span>
+                <span className={`vtag ${l.outcome.verdict}`}>{l.outcome.verdict}</span> {l.outcome.observed}
+              </span>
             </div>
           ) : null}
         </>
       ) : (
-        <div className="chain">{l.digest}</div>
+        <div className="chain">
+          <span className="lbl">NOTE</span>
+          <span>{l.digest}</span>
+        </div>
       )}
       <div className={`ruling ${veto ? "veto" : ""}`}>
         DIRECTOR: {l.ruling || "—"}
@@ -129,34 +146,48 @@ export function AgentView({ rt }: { rt: Runtime }) {
   const m = rt.model?.snapshot();
   const latest = d?.log.filter((l) => l.decision).at(-1);
   const mode = rt.session?.rigMode ?? "local";
-  const stage = d?.inFlight ? 3 : d?.currentWatch ? 6 : latest?.outcome ? 7 : 5;
-  const stages = ["INPUT", "ENGINE", "PLAYER MODEL", "RIG", "VALIDATE", "EXECUTE", "OUTCOME"];
+  const acting = !!d?.game.effects.some((e) => e.phase === "telegraph" || e.phase === "active");
+  const step = d?.inFlight ? 1 : acting ? 2 : d?.currentWatch ? 3 : 0;
+  const loop: [string, string][] = [
+    ["OBSERVE", "your inputs → player model"],
+    ["HYPOTHESIZE", "RIG names a habit"],
+    ["ACT", "rigs the machine to test it"],
+    ["EVALUATE", "sealed prediction vs. reality"],
+  ];
   return (
     <aside className="agentview" aria-label="Agent view">
       <div className="av-head">
-        Agent View
+        <span className="ttl">Agent View</span>
         <span className="mode">
-          RIG <b className={mode === "local" ? "local" : ""}>{mode === "live" ? rt.session?.model : "LOCAL FALLBACK"}</b> · calls{" "}
-          {d ? `${d.calls.live} live / ${d.calls.local} local` : "—"}
+          <b className={mode === "local" ? "local" : ""}>{mode === "live" ? (rt.session?.model ?? "LIVE").replace("claude-", "") : "LOCAL RIG (no API key)"}</b>
+          {d ? ` · ${d.calls.live} live / ${d.calls.local} local` : ""}
         </span>
       </div>
-      <div className="av-pipe">
-        {stages.map((s, i) => (
-          <span key={s} style={{ display: "contents" }}>
-            <span className={i + 1 === stage || (stage === 3 && i === 3) ? "on" : ""}>{s}</span>
-            {i < stages.length - 1 ? <em>→</em> : null}
-          </span>
+      <p className="av-intro">
+        RIG watches how you play, forms a claim about your habits, rigs the machine to exploit it, and seals a prediction
+        before it can see the result.
+      </p>
+      <ol className="av-loop">
+        {loop.map(([k, cap], i) => (
+          <li key={k} className={i === step ? "on" : ""}>
+            <span className="k">
+              <span className="n">{i + 1}</span>
+              {k}
+            </span>
+            <span className="cap">{cap}</span>
+          </li>
         ))}
-      </div>
+      </ol>
       <div className="av-sec">
         <h3>
-          Player model <small>deterministic telemetry · c = confidence</small>
+          <span className={`sn ${step === 0 ? "on" : ""}`}>1</span>Player model <small>measured from your inputs · last column = evidence</small>
         </h3>
         {m ? <ModelRows m={m} /> : <div>—</div>}
       </div>
       <div className="av-sec">
         <h3>
-          RIG now <small>{d?.inFlight ? `thinking… (${d.inFlight.trigger})` : "concise model output, no chain-of-thought"}</small>
+          <span className={`sn ${step === 1 ? "on" : ""}`}>2</span>RIG now{" "}
+          <small>{d?.inFlight ? `thinking… (${d.inFlight.trigger.replace("_", " ")})` : "latest decision · no chain-of-thought"}</small>
         </h3>
         {latest?.decision ? (
           <>
@@ -190,7 +221,7 @@ export function AgentView({ rt }: { rt: Runtime }) {
       </div>
       <div className="av-sec">
         <h3>
-          Hypothesis ledger <small>+ supported / − weakened</small>
+          <span className="sn">2</span>Hypothesis ledger <small>+ supported / − weakened</small>
         </h3>
         <table className="ledger">
           <tbody>
@@ -217,7 +248,7 @@ export function AgentView({ rt }: { rt: Runtime }) {
       </div>
       <div className="av-sec" style={{ flex: 1 }}>
         <h3>
-          Decision log <small>observe → hypothesize → act → evaluate</small>
+          <span className={`sn ${step >= 2 ? "on" : ""}`}>3·4</span>Decision log <small>newest first · saw → thinks → does → result</small>
         </h3>
         <ul className="dlog">
           {(d?.log ?? [])

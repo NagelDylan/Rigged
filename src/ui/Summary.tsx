@@ -1,4 +1,5 @@
 import type { Ability } from "../shared/rig";
+import { EyeCanvas } from "./RigPanel";
 import type { Runtime } from "./runtime";
 
 const fmtTime = (ms: number) => {
@@ -45,99 +46,117 @@ export function Summary({ rt }: { rt: Runtime }) {
   const wrong = verdicts.filter((v) => v === "WEAKENED").length;
   const end = r.rigEnd;
 
+  const judged = right + wrong;
+
   return (
     <div className="summary" role="dialog" aria-label="Run summary">
-      <div className="sum-head">
-        <h1>YOU ESCAPED</h1>
-        <div className="time">{fmtTime(r.timeMs)}</div>
-        <div className="again">
-          <button className="btn" onClick={() => rt.startRun()} autoFocus>
-            Play again
-          </button>
-          <div style={{ marginTop: 8 }}>
-            <span className="key">ENTER</span> again · <span className="key">D</span> agent view
+      <div className="sum-wrap">
+        <div className="sum-head">
+          <div>
+            <div className="kicker">RUN COMPLETE // RIG OFFLINE</div>
+            <h1>YOU ESCAPED</h1>
           </div>
-        </div>
-      </div>
-      <div className="sum-cols">
-        <div className="sum-plate">
-          <h3>RUN</h3>
-          <div className="stat">
-            <span>Deaths</span>
-            <span className="v">{r.summary.deaths}</span>
+          <div className="time">
+            <span>TIME</span>
+            {fmtTime(r.timeMs)}
           </div>
-          {r.summary.chambers.map((c, i) => (
-            <div className="stat" key={i}>
-              <span>
-                {String(i + 1).padStart(2, "0")} {c.template}
-              </span>
-              <span className="v">
-                {(c.timeMs / 1000).toFixed(1)}s · {c.deaths}✕
-              </span>
+          <div className="again">
+            <button className="btn" onClick={() => rt.startRun()} autoFocus>
+              Play again
+            </button>
+            <div className="hint">
+              <span className="key">ENTER</span> again · <span className="key">D</span> agent view
             </div>
-          ))}
-          <div className="stat">
-            <span>RIG predictions</span>
-            <span className="v">
-              {right} right · {wrong} wrong
-            </span>
-          </div>
-          <div className="stat">
-            <span>RIG decisions</span>
-            <span className="v">
-              {r.summary.calls.live} live · {r.summary.calls.local} local
-            </span>
           </div>
         </div>
-        <div className="sum-plate rigplate">
-          <h3>RIG LEARNED</h3>
-          <div className="learned">
-            {learned.map(([k, v]) => (
-              <div className="row" key={k}>
-                <span>{k}</span>
-                <span>{v}</span>
+        <div className="sum-cols">
+          <div className="sum-plate">
+            <h3>RUN</h3>
+            <div className="figs">
+              <div>
+                <b>{r.summary.deaths}</b>
+                <span>DEATHS</span>
               </div>
-            ))}
-          </div>
-          <h3 style={{ marginTop: 16 }}>WHERE YOU STOP</h3>
-          <div className="heat" aria-label="resting spots, left to right">
-            {r.summary.restingSpots.map((v, i) => {
-              const max = Math.max(0.1, ...r.summary.restingSpots);
-              return <i key={i} style={{ opacity: 0.12 + 0.88 * (v / max) }} />;
-            })}
-          </div>
-          <div className="heat-lbl">
-            <span>LEFT WALL</span>
-            <span>RIGHT WALL</span>
-          </div>
-          <h3 style={{ marginTop: 16 }}>ADAPTATION</h3>
-          <div className="learned" style={{ fontSize: 22 }}>
-            {adaptLine}
-          </div>
-          <h3 style={{ marginTop: 16 }}>HYPOTHESES</h3>
-          <div className="notes" style={{ fontSize: 19 }}>
-            {d
-              .topHypotheses(8)
-              .filter((h, i, all) => all.findIndex((q) => q.claim === h.claim) === i)
-              .slice(0, 4)
-              .map((h) => (
-              <div key={h.id}>
-                {h.claim}{" "}
-                <span style={{ color: "var(--rig-dim)" }}>
-                  +{h.supported}/−{h.weakened}
-                  {h.status === "abandoned" ? " ABANDONED" : ""}
+              <div>
+                <b>
+                  {right}
+                  <small>/{judged}</small>
+                </b>
+                <span>RIG CALLED IT</span>
+              </div>
+            </div>
+            {r.summary.chambers.map((c, i) => (
+              <div className="stat" key={i}>
+                <span>
+                  <em>{String(i + 1).padStart(2, "0")}</em> {c.template}
+                </span>
+                <span className="v">
+                  {(c.timeMs / 1000).toFixed(1)}s<i className={c.deaths ? "d" : ""}>{c.deaths}✕</i>
                 </span>
               </div>
             ))}
+            <div className="stat dim">
+              <span>RIG decisions</span>
+              <span className="v">
+                {r.summary.calls.live} live · {r.summary.calls.local} local
+              </span>
+            </div>
+          </div>
+          <div className="sum-plate rigplate">
+            <h3>RIG LEARNED</h3>
+            <div className="learned">
+              {learned.map(([k, v]) => (
+                <div className="row" key={k}>
+                  <span>{k}</span>
+                  <span>{v}</span>
+                </div>
+              ))}
+            </div>
+            <h3 className="sub">WHERE YOU STOP</h3>
+            <div className="heat" aria-label="resting spots, left to right">
+              {r.summary.restingSpots.map((v, i) => {
+                const max = Math.max(0.1, ...r.summary.restingSpots);
+                return <i key={i} style={{ opacity: 0.12 + 0.88 * (v / max) }} />;
+              })}
+            </div>
+            <div className="heat-lbl">
+              <span>LEFT WALL</span>
+              <span>RIGHT WALL</span>
+            </div>
+            <h3 className="sub">ADAPTATION</h3>
+            <div className="notes">
+              <div>{adaptLine}</div>
+            </div>
+          </div>
+          <div className="sum-plate rigplate">
+            <h3>MEMORY WRITTEN {r.rigEndSource ? `// ${r.rigEndSource.toUpperCase()}` : ""}</h3>
+            <div className="notes">
+              {end ? end.memoryNotes.map((n, i) => <div key={i}>{n}</div>) : <div>writing…</div>}
+            </div>
+            {end?.verdict ? <div className="verdict-note">{end.verdict}</div> : null}
+            <h3 className="sub">HYPOTHESES</h3>
+            <div className="hyps">
+              {d
+                .topHypotheses(8)
+                .filter((h, i, all) => all.findIndex((q) => q.claim === h.claim) === i)
+                .slice(0, 4)
+                .map((h) => (
+                  <div key={h.id} className={h.status === "abandoned" ? "ab" : ""}>
+                    <span>{h.claim}</span>
+                    <span className="sc">
+                      +{h.supported}/−{h.weakened}
+                      {h.status === "abandoned" ? " DROPPED" : ""}
+                    </span>
+                  </div>
+                ))}
+            </div>
           </div>
         </div>
-        <div className="sum-plate rigplate">
-          <h3>MEMORY WRITTEN {r.rigEndSource ? `(${r.rigEndSource.toUpperCase()})` : ""}</h3>
-          <div className="notes">
-            {end ? end.memoryNotes.map((n, i) => <div key={i}>{n}</div>) : <div>writing…</div>}
+        <div className="signoff">
+          <EyeCanvas rt={rt} scale={4} />
+          <div className="quote">
+            <span className="who">RIG:</span>“{end?.taunt || "Next time I'm starting there."}”
           </div>
-          {end?.verdict ? <div className="notes" style={{ marginTop: 12, color: "var(--bone-dim)" }}>{end.verdict}</div> : null}
-          <div className="quote">RIG: “{end?.taunt || "Next time I'm starting there."}”</div>
         </div>
       </div>
     </div>

@@ -73,6 +73,18 @@ const DIR_WORDS: [RegExp, Side][] = [
   [/\bright\b/i, "R"],
 ];
 
+/** First two words, lowercased, numbers removed: "Right lane. 84%…" and "Right lane. 79%…" share a shape. */
+export function tauntShape(t: string) {
+  return t
+    .toLowerCase()
+    .replace(/[0-9.,%]+/g, " ")
+    .replace(/[^a-z' ]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" ");
+}
+
 /** Taunt rules: ≤8 words, clean, not a repeat, and directionally true to tauntRef. */
 function validateTaunt(raw: string, ref: ModelField | null, obs: Observation, repairs: string[]): string {
   let t = cleanLine(raw, TAUNT_MAX_WORDS, "taunt", repairs);
@@ -95,6 +107,13 @@ function validateTaunt(raw: string, ref: ModelField | null, obs: Observation, re
   if (isRecentTaunt(t, obs.variety?.recentTaunts ?? [])) {
     repairs.push("taunt repeated; replaced");
     return groundedTaunt(obs, ref, 0.5);
+  }
+  // same sentence shape as one of the last 3 lines ("Right lane. N% …" again) → vary or stay quiet
+  const recent = (obs.variety?.recentTaunts ?? []).slice(-3).map(tauntShape);
+  if (recent.includes(tauntShape(t))) {
+    const alt = groundedTaunt(obs, null, 0.77);
+    repairs.push("taunt shape repeated; varied");
+    return recent.includes(tauntShape(alt)) || isRecentTaunt(alt, obs.variety?.recentTaunts ?? []) ? "" : alt;
   }
   return t;
 }

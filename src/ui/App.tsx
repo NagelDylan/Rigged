@@ -87,16 +87,33 @@ export function App() {
           {rt.screen === "game" && rt.paused ? (
             <div className="overlay">
               <div className="plate">
+                <div className="plate-tag">{rt.focused ? "OPERATOR HOLD" : "INPUT LOST"}</div>
                 <h2>{rt.focused ? "PAUSED" : "MACHINE IDLE"}</h2>
-                <p>{rt.focused ? "ESC TO RESUME" : "CLICK HERE, THEN ESC TO RESUME"}</p>
-                <p>
-                  <span className="key">W</span>
-                  <span className="key">S</span> LEFT MOTOR · <span className="key">↑</span>
-                  <span className="key">↓</span> RIGHT MOTOR
-                </p>
-                <p>
-                  <span className="key">R</span> RESTART RUN · <span className="key">M</span> SOUND · <span className="key">D</span> AGENT VIEW
-                </p>
+                <p className="lead">{rt.focused ? "ESC TO RESUME" : "CLICK HERE, THEN ESC TO RESUME"}</p>
+                <div className="keys">
+                  <span>
+                    <span className="key">W</span>
+                    <span className="key">S</span>
+                  </span>
+                  <span>LEFT MOTOR</span>
+                  <span>
+                    <span className="key">↑</span>
+                    <span className="key">↓</span>
+                  </span>
+                  <span>RIGHT MOTOR</span>
+                  <span>
+                    <span className="key">R</span>
+                  </span>
+                  <span>RESTART RUN</span>
+                  <span>
+                    <span className="key">M</span>
+                  </span>
+                  <span>SOUND</span>
+                  <span>
+                    <span className="key">D</span>
+                  </span>
+                  <span>AGENT VIEW</span>
+                </div>
                 <button className="btn" onClick={() => rt.setPaused(false)}>
                   Resume
                 </button>
@@ -120,7 +137,9 @@ export function App() {
         <span>
           {rt.screen === "title"
             ? "PRESS SPACE TO INSERT PLAYER"
-            : d?.inFlight
+            : rt.screen === "win"
+              ? "RIG OFFLINE. CONTROL RELEASED."
+              : d?.inFlight
               ? "RIG IS THINKING. THE MACHINE IS NOT WAITING."
               : "GET THE BALL INTO THE EXIT. AVOID EVERY OTHER HOLE."}
         </span>

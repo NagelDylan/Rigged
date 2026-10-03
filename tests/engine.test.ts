@@ -123,8 +123,8 @@ describe("RIG effects execute deterministically and fairly", () => {
     const h = def.holes[0];
     const g = new Game(def);
     g.protectedUntil = 0;
-    g.bar.yL = g.bar.yR = h.y - 80;
-    g.ball.x = h.x - 90; // hole up and to the right
+    g.bar.yL = g.bar.yR = h.y - 30;
+    g.ball.x = h.x - 90; // hole just above and to the right
     const e = g.enqueue(order({ ability: "PULSE", side: "R" }));
     hold(g, {}, 0.05);
     expect(e.phase).toBe("telegraph");

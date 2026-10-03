@@ -41,8 +41,11 @@ const share = (max: number, total: number) => (total > 0 ? max / total : 0);
 /** Dominant direction of a field, or null if the field has no direction / no data. */
 export function dominantSide(model: PlayerModelSnapshot, field: ModelField): Side | null {
   switch (field) {
-    case "laneBias":
-      return argmax(model.laneBias.v, ["L", "C", "R"] as const);
+    case "laneBias": {
+      // after a detected switch, the recent window is the truth
+      const lb = model.laneBias.v;
+      return argmax(lb.changed && lb.recent ? lb.recent : lb, ["L", "C", "R"] as const);
+    }
     case "wallPark":
       return model.wallPark.v.side ?? argmax(model.wallPark.v, ["L", "R"] as const);
     case "panicDirection": {
@@ -68,7 +71,7 @@ function read(field: ModelField, m: { c: number; n: number }, dev: number, extra
 /** One read per model field, unsorted. Never throws on odd input. */
 export function readModel(model: PlayerModelSnapshot): FieldRead[] {
   const out: FieldRead[] = [];
-  const lb = model.laneBias.v;
+  const lb = model.laneBias.v.changed && model.laneBias.v.recent ? model.laneBias.v.recent : model.laneBias.v;
   {
     const tot = num(lb.L, 0) + num(lb.C, 0) + num(lb.R, 0);
     const side = dominantSide(model, "laneBias");

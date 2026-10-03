@@ -113,11 +113,13 @@ const BLUEPRINTS: Record<Exclude<TemplateName, "MODEL">, (p: ChamberParams) => B
       outer: [P(0, 285), P(H * 0.3, 285), P(H * 0.88, 92), P(H, 92)],
       islands: [],
       slots: [
-        ...row(0.17, [-0.84, -0.52, -0.22, 0.22, 0.52, 0.84]),
-        ...row(0.36, [-0.85, -0.45, 0, 0.45, 0.85]),
+        // no holes hugging the walls low down: players brake against the wall (human playtest)
+        ...row(0.17, [-0.52, -0.22, 0.22, 0.52]),
+        ...row(0.36, [-0.45, 0, 0.45]),
         ...row(0.52, [-0.66, -0.2, 0.2, 0.66]),
         ...row(0.66, [-0.78, -0.3, 0.3, 0.78]),
-        ...row(0.78, [-0.9, -0.42, 0.42, 0.9]),
+        ...row(0.78, [-0.42, 0.42]),
+        ...row(0.78, [-0.9, 0.9], "d2"),
         ...sided(p.pressureSide, [
           { u: 0.35, v: 0.27 },
           { u: 0.55, v: 0.72 },
@@ -216,7 +218,7 @@ const BLUEPRINTS: Record<Exclude<TemplateName, "MODEL">, (p: ChamberParams) => B
       outer: [P(0, 280), P(H * 0.3, 280), P(H * 0.5, 74), P(H * 0.7, 280), P(H, 280)],
       islands: [],
       slots: [
-        ...row(0.16, [-0.84, -0.5, 0, 0.5, 0.84]),
+        ...row(0.16, [-0.5, 0, 0.5]),
         ...row(0.3, [-0.62, -0.2, 0.2, 0.62]),
         ...row(0.46, [-0.6, 0.6]),
         { u: 0, v: 0.6 },
